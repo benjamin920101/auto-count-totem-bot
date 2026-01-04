@@ -18,8 +18,8 @@ public class ModConfig {
     );
 
     // Fields persistent
-    public boolean globalEnabled = true;  // Tombol 1: Global mod enable (persistent)
-    public boolean keybindEnabled = true;  // Tombol 2: Keybind toggle enable (persistent)
+    public boolean globalEnabled = true;
+    public boolean keybindEnabled = true;
 
     // Static instance lazy-loaded
     private static ModConfig INSTANCE;

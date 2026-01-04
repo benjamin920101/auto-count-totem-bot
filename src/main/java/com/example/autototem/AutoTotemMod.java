@@ -81,7 +81,6 @@ public class AutoTotemMod implements ModInitializer {
         });
     }
 
-    // FIX: Ubah signature ke PlayerEntity (umum), cast internal ke ClientPlayerEntity
     // Aman di client context (mixin & tick sama-sama client-side)
     public static void checkAndEquipTotem(PlayerEntity player) {
         if (!(player instanceof ClientPlayerEntity clientPlayer)) {  // FIX: Safe cast + null-check
