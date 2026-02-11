@@ -6,18 +6,21 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.network.ClientPlayerInteractionManager;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
-import net.minecraft.entity.player.PlayerEntity;  // FIX: Tambah import PlayerEntity
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
-import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.concurrent.CompletableFuture;
 
 public class AutoTotemMod implements ModInitializer {
     public static final String MOD_ID = "auto-use-totem";
@@ -26,11 +29,12 @@ public class AutoTotemMod implements ModInitializer {
     private static KeyBinding toggleKey;
     public static boolean inGameEnabled = true;
 
-    // Shared debounce (sync mixin + tick)
-    private static int equipCooldown = 0;
+    // WebSocket endpoint
+    private static final String WEBHOOK_URL = "http://127.0.0.1:8080/pull";
+    private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
 
-    // Track pop
-    private static boolean lastOffhandWasTotem = false;
+    // Track totem count state (to avoid sending duplicate notifications)
+    private static int lastTotemCount = -1;
 
     @Override
     public void onInitialize() {
@@ -50,9 +54,6 @@ public class AutoTotemMod implements ModInitializer {
             ClientPlayerEntity player = client.player;
             if (player == null) return;
 
-            // Decrement shared cooldown
-            if (equipCooldown > 0) equipCooldown--;
-
             // Keybind toggle
             if (ModConfig.isGlobalEnabled() && ModConfig.isKeybindEnabled() && toggleKey.wasPressed()) {
                 inGameEnabled = !inGameEnabled;
@@ -61,62 +62,68 @@ public class AutoTotemMod implements ModInitializer {
                 LOGGER.debug("In-game state flipped to: {}", inGameEnabled);
             }
 
-            ItemStack offhand = player.getOffHandStack();
-            boolean currentOffhandTotem = offhand.isOf(Items.TOTEM_OF_UNDYING);
+            // Check totem count and send webhook when exactly 1 totem remains
+            if (ModConfig.isGlobalEnabled() && inGameEnabled) {
+                int currentTotemCount = countTotemsInInventory(player.getInventory());
 
-            // Pop detect: Re-equip kalau low HP & cooldown OK
-            if (lastOffhandWasTotem && !currentOffhandTotem && ModConfig.isGlobalEnabled() && inGameEnabled && player.getHealth() <= 2.0F && equipCooldown <= 0) {
-                checkAndEquipTotem(player);
-                equipCooldown = 2;
-                LOGGER.debug("Tick detected totem pop, re-equipping...");
+                // Send notification only when transitioning to 1 totem
+                if (currentTotemCount == 1 && lastTotemCount != 1) {
+                    sendWebhookNotification();
+                    player.sendMessage(Text.literal("§6[Auto Totem] §eWarning: Only 1 totem remaining!"), true);
+                    LOGGER.info("Only 1 totem remaining. Webhook notification sent.");
+                }
+
+                lastTotemCount = currentTotemCount;
             }
-
-            // Main tick equip: Low HP, no totem, cooldown OK
-            if (ModConfig.isGlobalEnabled() && inGameEnabled && player.getHealth() <= 2.0F && !currentOffhandTotem && equipCooldown <= 0) {
-                checkAndEquipTotem(player);
-                equipCooldown = 2;
-            }
-
-            lastOffhandWasTotem = currentOffhandTotem;
         });
     }
 
-    // Aman di client context (mixin & tick sama-sama client-side)
-    public static void checkAndEquipTotem(PlayerEntity player) {
-        if (!(player instanceof ClientPlayerEntity clientPlayer)) {  // FIX: Safe cast + null-check
-            LOGGER.warn("checkAndEquipTotem called on non-client player, skipping.");
-            return;
+    /**
+     * Count the number of totems in the player's inventory (hotbar + main inventory)
+     */
+    private static int countTotemsInInventory(PlayerInventory inventory) {
+        int count = 0;
+
+        // Check hotbar (slots 0-8)
+        for (int i = 0; i < 9; i++) {
+            if (inventory.getStack(i).isOf(Items.TOTEM_OF_UNDYING)) {
+                count++;
+            }
         }
 
-        MinecraftClient mc = MinecraftClient.getInstance();
-        ClientPlayerInteractionManager interactionManager = mc.interactionManager;
-        if (interactionManager == null) return;
-
-        PlayerInventory inventory = clientPlayer.getInventory();
-        if (inventory.offHand.get(0).isOf(Items.TOTEM_OF_UNDYING)) return;
-
-        int totemSlot = findTotemInInventory(inventory);
-        if (totemSlot != -1) {
-            int syncId = clientPlayer.playerScreenHandler.syncId;
-            int offhandSlotId = 45;
-
-            interactionManager.clickSlot(syncId, totemSlot, 0, SlotActionType.PICKUP, clientPlayer);
-            interactionManager.clickSlot(syncId, offhandSlotId, 0, SlotActionType.PICKUP, clientPlayer);
-            interactionManager.clickSlot(syncId, totemSlot, 0, SlotActionType.PICKUP, clientPlayer);
-
-            clientPlayer.playerScreenHandler.syncState();
-            LOGGER.debug("Equipped totem via {} (shared packet)", Thread.currentThread().getStackTrace()[2].getMethodName());
+        // Check main inventory (slots 9-35)
+        for (int i = 9; i < 36; i++) {
+            if (inventory.getStack(i).isOf(Items.TOTEM_OF_UNDYING)) {
+                count++;
+            }
         }
+
+        return count;
     }
 
-    private static int findTotemInInventory(PlayerInventory inventory) {
-        for (int i = 0; i < 9; i++) {
-            if (inventory.getStack(i).isOf(Items.TOTEM_OF_UNDYING)) return i;
-        }
-        for (int i = 9; i < 36; i++) {
-            if (inventory.getStack(i).isOf(Items.TOTEM_OF_UNDYING)) return i;
-        }
-        return -1;
+    /**
+     * Send a webhook notification to the configured endpoint
+     */
+    private static void sendWebhookNotification() {
+        // Send asynchronously to avoid blocking game thread
+        CompletableFuture.runAsync(() -> {
+            try {
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(new URI(WEBHOOK_URL))
+                        .GET()
+                        .build();
+
+                HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+
+                if (response.statusCode() == 200) {
+                    LOGGER.debug("Webhook notification sent successfully. Response: {}", response.body());
+                } else {
+                    LOGGER.warn("Webhook notification failed with status code: {}", response.statusCode());
+                }
+            } catch (Exception e) {
+                LOGGER.error("Failed to send webhook notification: {}", e.getMessage(), e);
+            }
+        });
     }
 
     public static boolean isModEnabled() {
