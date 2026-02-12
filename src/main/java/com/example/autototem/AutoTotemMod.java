@@ -62,15 +62,15 @@ public class AutoTotemMod implements ModInitializer {
                 LOGGER.debug("In-game state flipped to: {}", inGameEnabled);
             }
 
-            // Check totem count and send webhook when exactly 1 totem remains
+            // Check totem count and send webhook when no totems remain
             if (ModConfig.isGlobalEnabled() && inGameEnabled) {
                 int currentTotemCount = countTotemsInInventory(player.getInventory());
 
-                // Send notification only when transitioning to 1 totem
-                if (currentTotemCount == 1 && lastTotemCount != 1) {
+                // Send notification only when transitioning to 0 totems
+                if (currentTotemCount == 0 && lastTotemCount != 0) {
                     sendWebhookNotification();
-                    player.sendMessage(Text.literal("§6[Auto Totem] §eWarning: Only 1 totem remaining!"), true);
-                    LOGGER.info("Only 1 totem remaining. Webhook notification sent.");
+                    player.sendMessage(Text.literal("§6[Auto Totem] §c警告：圖騰已用完！"), true);
+                    LOGGER.info("No totems remaining. Webhook notification sent.");
                 }
 
                 lastTotemCount = currentTotemCount;
