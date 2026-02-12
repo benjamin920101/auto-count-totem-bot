@@ -2,8 +2,8 @@
 	"schemaVersion": 1,
 	"id": "auto-use-totem",
 	"version": "1.0.0",
-	"name": "Auto Use Totem",
-	"description": "Make Totem Of Undying auto use",
+	"name": "Totem Guardian - Auto Pearl Clutch",
+	"description": "Automatically pulls a pearl from your inventory when your last totem of undying is consumed, ensuring you never fall to your death. Perfect for clutch plays and survival situations.",
 	"authors": [
 		"BadutZY"
 	],
