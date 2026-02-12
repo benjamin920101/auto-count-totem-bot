@@ -69,7 +69,7 @@ public class AutoTotemMod implements ModInitializer {
                 // Send notification only when transitioning to 0 totems
                 if (currentTotemCount == 0 && lastTotemCount != 0) {
                     sendWebhookNotification();
-                    player.sendMessage(Text.literal("§6[Auto Totem] §c警告：圖騰已用完！"), true);
+                    player.sendMessage(Text.literal("§6[Auto Totem] §cWarning: Only one totem left."), true);
                     LOGGER.info("No totems remaining. Webhook notification sent.");
                 }
 
