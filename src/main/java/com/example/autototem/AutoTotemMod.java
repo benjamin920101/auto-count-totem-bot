@@ -62,15 +62,15 @@ public class AutoTotemMod implements ModInitializer {
                 LOGGER.debug("In-game state flipped to: {}", inGameEnabled);
             }
 
-            // Check totem count and send webhook when no totems remain
+            // Check totem count and send webhook when only one totem remains
             if (ModConfig.isGlobalEnabled() && inGameEnabled) {
                 int currentTotemCount = countTotemsInInventory(player.getInventory());
 
-                // Send notification only when transitioning to 0 totems
-                if (currentTotemCount == 0 && lastTotemCount != 0) {
+                // Send notification only when transitioning to 1 totem (from more than 1)
+                if (currentTotemCount == 1 && lastTotemCount > 1) {
                     sendWebhookNotification();
                     player.sendMessage(Text.literal("§6[Auto Totem] §cWarning: Only one totem left."), true);
-                    LOGGER.info("No totems remaining. Webhook notification sent.");
+                    LOGGER.info("Only one totem remaining. Webhook notification sent.");
                 }
 
                 lastTotemCount = currentTotemCount;
@@ -79,7 +79,7 @@ public class AutoTotemMod implements ModInitializer {
     }
 
     /**
-     * Count the number of totems in the player's inventory (hotbar + main inventory)
+     * Count the number of totems in the player's inventory (hotbar + main inventory + both hands)
      */
     private static int countTotemsInInventory(PlayerInventory inventory) {
         int count = 0;
@@ -96,6 +96,16 @@ public class AutoTotemMod implements ModInitializer {
             if (inventory.getStack(i).isOf(Items.TOTEM_OF_UNDYING)) {
                 count++;
             }
+        }
+
+        // Check main hand (slot 36)
+        if (inventory.getStack(36).isOf(Items.TOTEM_OF_UNDYING)) {
+            count++;
+        }
+
+        // Check off hand (slot 40)
+        if (inventory.getStack(40).isOf(Items.TOTEM_OF_UNDYING)) {
+            count++;
         }
 
         return count;
